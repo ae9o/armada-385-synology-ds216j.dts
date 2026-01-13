@@ -1,0 +1,616 @@
+/*
+ * Device Tree file for Synology DS216j NAS
+ *
+ * Copyright (C) 2026 Alexei Evdokimenko <aevdokimenkosd@gmail.com>
+ *
+ * Based on Device Tree files for:
+ *  - Synology DS216 NAS, by Robin DUBREUIL <robin@dubreuil.pro>
+ *  - Synology DS116 NAS, by Willy Tarreau <w@1wt.eu>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ */
+
+/dts-v1/;
+#include "armada-385.dtsi"
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/leds/common.h>
+#include <dt-bindings/input/input.h>
+
+/ {
+	model = "Synology DS216j";
+	compatible = "synology,DS216j", "marvell,a385-gp", "marvell,armada385",
+		     "marvell,armada380";
+
+	chosen {
+		stdout-path = "serial0:115200n8";
+	};
+
+	aliases {
+		ethernet0 = &eth0;
+		egiga0 = &eth0;
+	};
+
+	memory {
+		device_type = "memory";
+		reg = <0x00000000 0x20000000>; /* 512 MB */
+	};
+
+	soc {
+		ranges = <MBUS_ID(0xf0, 0x01) 0 0xf1000000 0x100000
+			  MBUS_ID(0x01, 0x1d) 0 0xfff00000 0x100000
+			  MBUS_ID(0x09, 0x19) 0 0xf1100000 0x10000
+			  MBUS_ID(0x09, 0x15) 0 0xf1110000 0x10000
+			  MBUS_ID(0x0c, 0x04) 0 0xf1200000 0x100000>;
+
+		internal-regs {
+			poweroff@12100 {
+				compatible = "synology,power-off";
+				reg = <0x12100 0x100>;
+				clocks = <&coreclk 0>;
+			};
+		};
+
+		gpio-fan {
+			compatible = "gpio-fan";
+			pinctrl-0 = <&fan_ctrl_low_pins
+				     &fan_ctrl_mid_pins
+				     &fan_ctrl_high_pins>;
+			pinctrl-names = "default";
+			gpios = <&gpio1 18 GPIO_ACTIVE_HIGH>,
+				<&gpio1 17 GPIO_ACTIVE_HIGH>,
+				<&gpio1 16 GPIO_ACTIVE_HIGH>;
+
+			/*
+			 * WARNING! This binding causes systemd to consume a lot
+			 * of CPU time. You must understand why you are
+			 * uncommenting this line.
+			 */
+			//alarm-gpios = <&gpio1 20 GPIO_ACTIVE_HIGH>;
+
+			/* This speed map must be adapted to your fan model. */
+			gpio-fan,speed-map = <   0 0>,
+					     < 400 1>,
+					     < 900 2>,
+					     <1300 3>,
+					     <1700 4>,
+					     <2100 5>,
+					     <2500 6>,
+					     <3000 7>;
+			#cooling-cells = <2>;
+		};
+
+		/*
+		 * NOTE: the LAN LED is defined not in this section, but below
+		 * in the MDIO, because it is controlled directly from the PHY.
+		 */
+		gpio-leds {
+			compatible = "gpio-leds";
+			pinctrl-0 = <&led_green_disk1_pins
+				     &led_green_disk2_pins
+				     &led_amber_disk1_pins
+				     &led_amber_disk2_pins>;
+
+			/*
+			 * The green LEDs for the disks were not accessible in
+			 * the original device trees because pins 19 and 20
+			 * were defined for UART1 and AHCI0. These pins are
+			 * actually connected to a controller that drives the
+			 * LEDs (at least in the DS216j model). Synology's GPL
+			 * source code (see "pinctrl-armada-38x.c") hints that
+			 * UART1 can be moved to pins 17 and 18, and AHCI0 to
+			 * pin 21, so pins 19 and 20 can be freed up to access
+			 * the LEDs.
+			 *
+			 * NOTE: Synology's "pinctrl-armada-38x.c" file differs
+			 * from the one that comes with a modern Linux kernel.
+			 *
+			 * The config below reproduces the Synology's default
+			 * behavior. The LEDs turn on when the disks are powered
+			 * on at boot. The LEDs then blink during read/write
+			 * activity. When the hd-idle service puts the disks
+			 * into standby mode, the LEDs turn off. When the disks
+			 * resume from standby, the LEDs turn on again.
+			 *
+			 * NOTE: an additional systemd unit is required to turn
+			 * on/off the LEDs for hd-idle events. For details,
+			 * see https://github.com/ae9o/diskstation-ledd
+			 */
+
+			led-green-disk1 {
+				label = "ds216j:green:disk1";
+				function = LED_FUNCTION_DISK;
+				color = <LED_COLOR_ID_GREEN>;
+				gpios = <&gpio0 20 GPIO_ACTIVE_HIGH>;
+				linux,default-trigger = "ide-disk1";
+				default-state = "keep";
+			};
+
+			led-green-disk2 {
+				label = "ds216j:green:disk2";
+				function = LED_FUNCTION_DISK;
+				color = <LED_COLOR_ID_GREEN>;
+				gpios = <&gpio0 19 GPIO_ACTIVE_HIGH>;
+				linux,default-trigger = "ide-disk2";
+				default-state = "keep";
+			};
+
+			led-amber-disk1-err {
+				label = "ds216j:amber:disk1-err";
+				function = LED_FUNCTION_DISK_ERR;
+				color = <LED_COLOR_ID_AMBER>;
+				gpios = <&gpio0 13 GPIO_ACTIVE_HIGH>;
+				default-state = "off";
+			};
+
+			led-amber-disk2-err {
+				label = "ds216j:amber:disk2-err";
+				function = LED_FUNCTION_DISK_ERR;
+				color = <LED_COLOR_ID_AMBER>;
+				gpios = <&gpio0 14 GPIO_ACTIVE_HIGH>;
+				default-state = "off";
+			};
+		};
+	};
+
+	usb-xhci-phy0 {
+		compatible = "usb-nop-xceiv";
+		vcc-supply = <&reg_5v_usb0>;
+		#phy-cells = <0>;
+	};
+
+	usb-xhci-phy1 {
+		compatible = "usb-nop-xceiv";
+		vcc-supply = <&reg_5v_usb1>;
+		#phy-cells = <0>;
+	};
+
+	reg_5v_usb0: reg-5v-usb0 {
+		compatible = "regulator-fixed";
+		pinctrl-names = "default";
+		pinctrl-0 = <&reg_5v_usb0_pins>;
+		regulator-name = "reg_5v_usb0";
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+		enable-active-high;
+		regulator-always-on;
+		regulator-boot-on;
+		gpio = <&gpio1 26 GPIO_ACTIVE_HIGH>;
+	};
+
+	reg_5v_usb1: reg-5v-usb1 {
+		compatible = "regulator-fixed";
+		pinctrl-names = "default";
+		pinctrl-0 = <&reg_5v_usb1_pins>;
+		regulator-name = "reg_5v_usb1";
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+		enable-active-high;
+		regulator-always-on;
+		regulator-boot-on;
+		gpio = <&gpio1 27 GPIO_ACTIVE_HIGH>;
+	};
+
+	reg_sata0: reg-sata0 {
+		compatible = "regulator-fixed";
+		pinctrl-names = "default";
+		pinctrl-0 = <&reg_sata0_pins>;
+		regulator-name = "reg_sata0";
+		regulator-min-microvolt = <12000000>;
+		regulator-max-microvolt = <12000000>;
+		enable-active-high;
+		regulator-always-on;
+		startup-delay-us = <5000000>;
+		gpio = <&gpio0 15 GPIO_ACTIVE_HIGH>;
+		regulator-state-mem {
+			regulator-off-in-suspend;
+		};
+	};
+
+	reg_5v_sata0: reg-5v-sata0 {
+		compatible = "regulator-fixed";
+		regulator-name = "reg_5v_sata0";
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+		vin-supply = <&reg_sata0>;
+	};
+
+	reg_12v_sata0: reg-12v-sata0 {
+		compatible = "regulator-fixed";
+		regulator-name = "reg_12v_sata0";
+		regulator-min-microvolt = <12000000>;
+		regulator-max-microvolt = <12000000>;
+		vin-supply = <&reg_sata0>;
+	};
+
+	reg_sata1: reg_sata1 {
+		compatible = "regulator-fixed";
+		pinctrl-names = "default";
+		pinctrl-0 = <&reg_sata1_pins>;
+		regulator-name = "reg_sata1";
+		regulator-min-microvolt = <12000000>;
+		regulator-max-microvolt = <12000000>;
+		enable-active-high;
+		regulator-always-on;
+		startup-delay-us = <5000000>;
+		gpio = <&gpio0 16 GPIO_ACTIVE_HIGH>;
+		regulator-state-mem {
+			regulator-off-in-suspend;
+		};
+	};
+
+	reg_5v_sata1: reg-5v-sata1 {
+		compatible = "regulator-fixed";
+		regulator-name = "reg_5v_sata1";
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+		vin-supply = <&reg_sata1>;
+	};
+
+	reg_12v_sata1: reg-12v-sata1 {
+		compatible = "regulator-fixed";
+		regulator-name = "reg_12v_sata1";
+		regulator-min-microvolt = <12000000>;
+		regulator-max-microvolt = <12000000>;
+		vin-supply = <&reg_sata1>;
+	};
+};
+
+&i2c0 {
+	status = "okay";
+	clock-frequency = <100000>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&i2c0_pins>;
+
+	/*
+	 * Single-channel digital potentiometer TI TPL0401A controls LED
+	 * brightness. It appears there's no standard driver for this
+	 * potentiometer. However, its registers can be written directly using
+	 * i2c-tools:
+	 *
+	 * i2cset -y 0 0x2e 0x00 <0x80|0xa0|0xaa|0xff>
+	 *                          <-- brighter
+	 */
+	tpl0401a@2e {
+		compatible = "ti,tpl0401a";
+		reg = <0x2e>;
+	};
+};
+
+&uart0 {
+	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&uart0_pins>;
+};
+
+&uart1 {
+	/*
+	 * A PIC16F1829 is connected to UART1 at 9600 bps, and takes
+	 * single-character orders:
+	 *   "1" : power off // already handled by the poweroff node
+	 *   "2" : short beep
+	 *   "3" : long beep
+	 *   "4" : turn the power LED ON
+	 *   "5" : flash the power LED
+	 *   "6" : turn the power LED OFF
+	 *   "7" : turn the status LED OFF
+	 *   "8" : turn the status LED ON
+	 *   "9" : flash the status LED
+	 *   "A" : flash the motherboard LED (D8)
+	 *   "B" : turn the motherboard LED OFF
+	 *   "C" : hard reset
+	 *
+	 * In addition, UART1 is used to receive single-character messages
+	 * from the PIC16F1829 indicating that the power/reset buttons on
+	 * the device chassis have been pressed. In the original Sinology
+	 * DSM OS, the "scemd" daemon, whose code is not licensed under the
+	 * GPL, is responsible for handling these messages.
+	 *
+	 * It is important to specify the correct pins for this device,
+	 * otherwise messages will not arrive.
+	 *
+	 * Here's an example of how these messages can be processed using bash:
+	 *
+	 *   # Read one byte from UART1.
+	 *   LANG=C IFS= read -r -d '' -n 1 message < /dev/ttyS1
+	 *
+	 *   case $message in
+	 *     $'\x30')
+	 *       echo "Poweroff pressed"
+	 *       poweroff
+	 *       ;;
+	 *     $'\x61')
+	 *       echo "Reset pressed"
+	 *       echo C > /dev/ttyS1
+	 *       ;;
+	 *   esac
+	 *
+	 * For details, see https://github.com/ae9o/diskstation-keyd
+	 */
+	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&uart1_pins>;
+};
+
+&eth0 {
+	status = "okay";
+	phy-handle = <&ethphy0>;
+	phy-mode = "sgmii";
+	buffer-manager = <&bm>;
+	bm,pool-long = <0>;
+	bm,pool-short = <1>;
+	max-speed = <1000>;
+};
+
+&mdio {
+	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&mdio_pins>;
+
+	ethphy0: ethernet-phy@1 {
+		compatible = "ethernet-phy-ieee802.3-c22";
+		reg = <1>;
+		max-speed = <1000>;
+
+		/*
+		 * This LED cannot be listed in the "gpio-leds" section because
+		 * it is controlled directly from the PHY.
+		 */
+		leds {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			led-green-lan@0 {
+				reg = <0>;
+				color = <LED_COLOR_ID_GREEN>;
+				function = LED_FUNCTION_LAN;
+				default-state = "keep";
+
+				/*
+				 * This trigger requires additional
+				 * configuration after the NAS boots.
+				 *
+				 * Add these lines to the "/etc/rc.local" file:
+				 *
+				 *   LED="/sys/class/leds/f1072004.mdio-mii:01:green:lan"
+				 *   echo 1 > $LED/link
+				 *   echo 1 > $LED/tx
+				 *   echo 1 > $LED/rx
+				 *   echo end0 > $LED/device_name
+				 *
+				 * WARNING! For older distros, you may need to
+				 * use "eth0" instead of "end0" as the device
+				 * name.
+				 *
+				 * WARNING! DO NOT "echo netdev > trigger" in
+				 * the "/etc/rc.local" file. Leave this
+				 * assignment in the DTS. Otherwise, trigger
+				 * won't work as intended.
+				 */
+				linux,default-trigger = "netdev";
+			};
+		};
+	};
+};
+
+&ahci0 {
+	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&ahci0_pins>;
+
+	sata-port@0 {
+		reg = <0>;
+		target-supply = <&reg_5v_sata0>;
+	};
+
+	sata-port@1 {
+		reg = <1>;
+		target-supply = <&reg_5v_sata1>;
+	};
+};
+
+/*
+ * There is no SEIKO RTC chip in the DS216j model.
+ * The device uses the built-in MVEBU RTC.
+ */
+&rtc {
+	status = "okay";
+};
+
+&bm {
+	status = "okay";
+};
+
+&bm_bppi {
+	status = "okay";
+};
+
+&usb3_0 {
+	status = "okay";
+};
+
+&usb3_1 {
+	status = "okay";
+};
+
+&pciec {
+	status = "okay";
+};
+
+&pcie1 {
+	status = "okay";
+};
+
+&pcie2 {
+	status = "okay";
+};
+
+&pcie3 {
+	status = "okay";
+};
+
+&spi0 {
+	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&spi0_pins>;
+
+	flash@0 {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		compatible = "macronix,mx25l6405d", "jedec,spi-nor";
+		reg = <0>;
+		spi-max-frequency = <50000000>;
+		m25p,fast-read;
+
+		/*
+		 * This is the default partiotion table for Synology DSM.
+		 *
+		 * NOTE: there is a redboot partition table despite u-boot
+		 * being used. The names presented here are the same as those
+		 * found in the FIS directory. There is also a small device
+		 * tree in the last 64kB of the RedBoot partition which is not
+		 * enumerated. The MAC address and the serial number are listed
+		 * in the "vendor" partition.
+		 */
+		partition@0 {
+			label = "RedBoot";
+			reg = <0x00000000 0x000f0000>;
+			read-only;
+		};
+
+		partition@c0000 {
+			label = "zImage";
+			reg = <0x000f0000 0x002d0000>;
+		};
+
+		partition@390000 {
+			label = "rd.gz";
+			reg = <0x003c0000 0x00410000>;
+		};
+
+		partition@7d0000 {
+			label = "vendor";
+			reg = <0x007d0000 0x00010000>;
+			read-only;
+		};
+
+		partition@7e0000 {
+			label = "RedBoot config";
+			reg = <0x007e0000 0x00010000>;
+			read-only;
+		};
+
+		partition@7f0000 {
+			label = "FIS directory";
+			reg = <0x007f0000 0x00010000>;
+			read-only;
+		};
+
+		/*
+		 * This partition table is used when installing Debian instead
+		 * of Synology DSM.
+		 */
+		//partition@0 { /* 896 KB */
+		//	label = "u-boot";
+		//	reg = <0x00000000 0x000e0000>;
+		//	read-only;
+		//};
+
+		//partition@e0000 { /* 64 KB */
+		//	label = "dtb";
+		//	reg = <0x000e0000 0x00010000>;
+		//	read-only;
+		//};
+
+		//partition@f0000 { /* 7104 KB */
+		//	label = "kernel";
+		//	reg = <0x000f0000 0x006f0000>;
+		//};
+
+		//partition@7d0000 { /* 128 KB */
+		//	label = "env";
+		//	reg = <0x007e0000 0x00020000>;
+		//	read-only;
+		//};
+	};
+};
+
+&pinctrl {
+	/*
+	 * To access the disks' green LEDs, pins 19 and 20 must be freed here.
+	 * Synology's GPL source code (see "pinctrl-armada-38x.c") contains a
+	 * hint that UART1 can be moved to pins 17 and 18. These pins are
+	 * vacant in the DS216j model. You may need to choose another pair for
+	 * a different DiskStation model.
+	 */
+	uart1_pins: uart-pins-1 {
+		marvell,pins = "mpp17", "mpp18";
+		marvell,function = "ua1";
+	};
+
+	led_amber_disk1_pins: led-pins-0 {
+		marvell,pins = "mpp13";
+		marvell,function = "gpio";
+	};
+
+	led_amber_disk2_pins: led-pins-1 {
+		marvell,pins = "mpp14";
+		marvell,function = "gpio";
+	};
+
+	reg_sata0_pins: reg-sata-pins-0 {
+		marvell,pins = "mpp15";
+		marvell,function = "gpio";
+	};
+
+	reg_sata1_pins: reg-sata-pins-1 {
+		marvell,pins = "mpp16";
+		marvell,function = "gpio";
+	};
+
+	led_green_disk2_pins: led-pins-2 {
+		marvell,pins = "mpp19";
+		marvell,function = "gpio";
+	};
+
+	led_green_disk1_pins: led-pins-3 {
+		marvell,pins = "mpp20";
+		marvell,function = "gpio";
+	};
+
+	/*
+	 * According to the Synology's "pinctrl-armada-38x.c" file, moving this
+	 * binding from pin 20 to pin 21 allows access to the disk's green LED.
+	 */
+	ahci0_pins: ahci-pins-0 {
+		marvell,pins = "mpp21";
+		marvell,function = "sata0";
+	};
+
+	fan_ctrl_high_pins: fan-ctrl-pins-0 {
+		marvell,pins = "mpp48";
+		marvell,function = "gpio";
+	};
+
+	fan_ctrl_mid_pins: fan-ctrl-pins-1 {
+		marvell,pins = "mpp49";
+		marvell,function = "gpio";
+	};
+
+	fan_ctrl_low_pins: fan-ctrl-pins-2 {
+		marvell,pins = "mpp50";
+		marvell,function = "gpio";
+	};
+
+	reg_5v_usb0_pins: reg-5v-usb-pins-0 {
+		marvell,pins = "mpp58";
+		marvell,function = "gpio";
+	};
+
+	reg_5v_usb1_pins: reg-5v-usb-pins-1 {
+		marvell,pins = "mpp59";
+		marvell,function = "gpio";
+	};
+};
