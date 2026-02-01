@@ -269,9 +269,13 @@
 	 * brightness. It appears there's no standard driver for this
 	 * potentiometer. However, its registers can be written directly using
 	 * i2c-tools:
+	 * 
+	 *   # Unlock brightness control.
+	 *   i2cset -y 0 0x2e 0xff 0xff
 	 *
-	 * i2cset -y 0 0x2e 0x00 <0x80|0xa0|0xaa|0xff>
-	 *                          <-- brighter
+	 *   # Set brightness.
+	 *   i2cset -y 0 0x2e 0x00 <0xff|0xaa|0xa0|0x80>
+	 *   #                         brighter -->
 	 */
 	tpl0401a@2e {
 		compatible = "ti,tpl0401a";

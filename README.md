@@ -68,8 +68,12 @@ However, its registers can be written directly using `i2c-tools`. Use this
 command to adjust brightness:
 
 ```bash
-i2cset -y 0 0x2e 0x00 <0x80|0xa0|0xaa|0xff>
-#                        <-- brighter
+# Unlock brightness control.
+i2cset -y 0 0x2e 0xff 0xff
+
+# Set brightness.
+i2cset -y 0 0x2e 0x00 <0xff|0xaa|0xa0|0x80>
+#                         brighter -->
 ```
 
 ### Chassis buttons
