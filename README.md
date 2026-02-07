@@ -63,18 +63,16 @@ file from the kernel documentation.
 ### LED brightness control
 
 This NAS model uses single-channel digital potentiometer TI TPL0401A to control
-LED brightness. It appears there's no standard driver for this potentiometer.
-However, its registers can be written directly using `i2c-tools`. Use this
-command to adjust brightness:
+LED brightness. To adjust the brightness, use the following command:
 
 ```bash
-# Unlock brightness control.
-i2cset -y 0 0x2e 0xff 0xff
-
-# Set brightness.
-i2cset -y 0 0x2e 0x00 <0xff|0xaa|0xa0|0x80>
-#                         brighter -->
+# Use a value from the range [0..127] (lower is brighter).
+echo 40 > /sys/bus/iio/devices/iio:device0/out_resistance0_raw
 ```
+
+Although any value can be selected from the `[0..127]` range in increments of
+`1`, only certain values ​​actually change the LED brightness. For example: `0`,
+`39`,`40`, `127`.
 
 ### Chassis buttons
 
