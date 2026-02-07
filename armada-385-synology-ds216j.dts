@@ -265,20 +265,18 @@
 	pinctrl-0 = <&i2c0_pins>;
 
 	/*
-	 * Single-channel digital potentiometer TI TPL0401A controls LED
-	 * brightness. It appears there's no standard driver for this
-	 * potentiometer. However, its registers can be written directly using
-	 * i2c-tools:
-	 * 
-	 *   # Unlock brightness control.
-	 *   i2cset -y 0 0x2e 0xff 0xff
+	 * Digital potentiometer TI TPL0401A controls LED brightness.
+	 * To adjust it, use the following command:
 	 *
-	 *   # Set brightness.
-	 *   i2cset -y 0 0x2e 0x00 <0xff|0xaa|0xa0|0x80>
-	 *   #                         brighter -->
+	 *   # Use a value from the range [0..127] (lower is brighter).
+	 *   echo 40 > /sys/bus/iio/devices/iio:device0/out_resistance0_raw
+	 *
+	 * Although any value can be selected from the [0..127] range in
+	 * increments of 1, only certain values ​​actually change the LED
+	 * brightness. For example: 0, 39, 40, 127.
 	 */
 	tpl0401a@2e {
-		compatible = "ti,tpl0401a";
+		compatible = "tpl0401-103";
 		reg = <0x2e>;
 	};
 };
